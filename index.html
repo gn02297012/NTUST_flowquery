@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>國立台灣科技大學 對外網路流量查詢</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href="css/c3.css" rel="stylesheet" type="text/css">
+        <script src="js/d3.v3.min.js"></script>
+        <script src="js/c3.min.js"></script>
+        <style>
+            #chart {
+                width: 100%;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h2>國立台灣科技大學 對外網路流量查詢</h2>
+            <p>讓你知道每天使用流量的變化</p>
+        </header>
+        <div>
+            <form>
+                <label>
+                    IP
+                    <input type="text" id="ip" value="140.118.31.56" required>
+                </label>
+                <label>
+                    開始日期
+                    <input type="date" id="startDate" value="" required>
+                </label>
+                <label>
+                    結束日期
+                    <input type="date" id="endDate" value="" required>
+                </label>
+                <input type="button" id="submit" value="查詢" onclick="query()">
+            </form>
+        </div>
+        <div id="chart"></div>
+        <div id="table">
+            <table border="1">
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>流量(Bytes)</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                </tbody>
+            </table>
+        </div>
+        <script>
+            /**
+             * 將日期格式化成Input type=date的格式
+             * @param {date} d 日期
+             * @param {number} offset 要調整的時間量(毫秒)
+             * @returns {String} 年-月-日
+             */
+            var formatDateInput = function(d, offset) {
+                if (offset) {
+                    d.setTime(d.getTime() - offset);
+                }
+                var mm = d.getMonth() + 1,
+                        dd = d.getDate();
+                if (mm < 10) {
+                    mm = '0' + mm;
+                }
+                if (dd < 10) {
+                    dd = '0' + dd;
+                }
+                return (d.getFullYear()) + '-' + mm + '-' + dd;
+            }
+
+            //設定日期的預設值
+            d3.select('#startDate').attr('value', formatDateInput(new Date(), 86400 * 1000 * 10));
+            d3.select('#endDate').attr('value', formatDateInput(new Date()));
+
+            var chart;
+
+            //按下查詢的事件
+            function query() {
+                //取出參數
+                var ip = document.getElementById('ip').value;
+                var startDate = document.getElementById('startDate').value;
+                var endDate = document.getElementById('endDate').value;
+                //檢查日期是否超過60天
+                var d1 = new Date(startDate);
+                var d2 = new Date(endDate);
+                var today = new Date();
+                var diff1 = (today - d1) / 86400 / 1000;
+                var diff2 = (today - d2) / 86400 / 1000;
+                if (diff1 >= 61 || diff2 >= 61 ) {
+                    alert('最多只能查詢60天以內的資料');
+                    return false;
+                }
+                //呼叫API
+                document.getElementById('submit').disabled = true;
+                d3.json('flowquery.php?ip=' + ip + '&startDate=' + startDate + '&endDate=' + endDate, function(error, data) {
+                    document.getElementById('submit').disabled = false;
+                    console.log(data);
+                    
+                    //處理查詢失敗的情況
+                    if (!data || (data.success === undefined) || !data.success) {
+                        console.log('查詢失敗');
+                        return false;
+                    }
+
+                    //C3畫圖開始
+                    //取出日期，產生X軸
+                    var x = data.result.map(function(d) {
+                        return new Date(d.date.replace(/\//g, '-'));
+                    });
+                    x.unshift('x');
+                    //取出流量
+                    var flow = data.result.map(function(d) {
+                        return d.flow / 1000 / 1000;
+                    });
+                    flow.unshift(ip);
+                    //合併成圖表需要的資料
+                    var col = [x, flow];
+                    //建立日期格式化的函數
+                    var format = d3.time.format("%Y-%m-%d");
+                    //畫圖
+                    chart = c3.generate({
+                        bindto: '#chart',
+                        data: {
+                            x: 'x',
+                            columns: [x, flow]
+                        },
+                        axis: {
+                            x: {
+                                type: 'timeseries',
+                                padding: {right: 100},
+                                tick: {
+                                    format: function(x) {
+                                        return format(x);
+                                    }
+                                }
+                            },
+                            y: {
+                                label: '流量(MB)'
+                            }
+                        }
+                    });
+                    //C3畫圖結束
+
+                    //填表格開始
+                    var tbody = d3.select('#table tbody');
+                    tbody.selectAll('tr').remove();
+                    var tr = tbody.selectAll('tr')
+                            .data(data.result).enter()
+                            .append('tr');
+                    tr.selectAll('td')
+                            .data(function(d) {
+                                return [d.date, d.flow];
+                            }).enter()
+                            .append('td')
+                            .text(function(d) {
+                                return d;
+                            });
+                    //填表格結束
+                });
+            }
+
+
+        </script>
+    </body>
+</html>
