@@ -11,6 +11,15 @@
             #chart {
                 width: 100%;
             }
+
+            #table>table {
+                border-spacing: 0;
+                border-collapse: collapse;
+            }
+
+            #table>table * {
+                border: 1px solid black;
+            }
         </style>
     </head>
     <body>
@@ -22,22 +31,22 @@
             <form>
                 <label>
                     IP
-                    <input type="text" id="ip" value="140.118.31.56" required>
+                    <input type="text" id="ip" value="140.118.31.56" required />
                 </label>
                 <label>
                     開始日期
-                    <input type="date" id="startDate" value="" required>
+                    <input type="date" id="startDate" value="" required />
                 </label>
                 <label>
                     結束日期
-                    <input type="date" id="endDate" value="" required>
+                    <input type="date" id="endDate" value="" required />
                 </label>
                 <input type="button" id="submit" value="查詢" onclick="query()">
             </form>
         </div>
         <div id="chart"></div>
         <div id="table">
-            <table border="1">
+            <table>
                 <thead>
                     <tr>
                         <th>日期</th>
@@ -49,11 +58,14 @@
                 </tbody>
             </table>
         </div>
+        <footer>
+            <p>程式碼: <a href="https://github.com/gn02297012/NTUST_flowquery" target="_blank">GitHub</a></p>
+        </footer>
         <script>
             /**
              * 將日期格式化成Input type=date的格式
              * @param {date} d 日期
-             * @param {number} offset 要調整的時間量(毫秒)
+             * @param {Number} offset 要調整的時間量(毫秒)
              * @returns {String} 年-月-日
              */
             var formatDateInput = function(d, offset) {
@@ -71,10 +83,22 @@
                 return (d.getFullYear()) + '-' + mm + '-' + dd;
             }
 
+            /**
+             * Round到小數第4位
+             * @param {Number} n
+             * @returns {Number}
+             */
+            var round4 = function(n) {
+                return Math.round(n * 1000) / 1000;
+            }
+
             //設定日期的預設值
-            d3.select('#startDate').attr('value', formatDateInput(new Date(), 86400 * 1000 * 10));
+            d3.select('#startDate').attr('value', formatDateInput(new Date(), 86400 * 1000 * 2));
             d3.select('#endDate').attr('value', formatDateInput(new Date()));
 
+            //建立日期格式化的函數
+            var format = d3.time.format("%Y-%m-%d");
+            //折線圖
             var chart;
 
             //按下查詢的事件
@@ -89,7 +113,7 @@
                 var today = new Date();
                 var diff1 = (today - d1) / 86400 / 1000;
                 var diff2 = (today - d2) / 86400 / 1000;
-                if (diff1 >= 61 || diff2 >= 61 ) {
+                if (diff1 >= 61 || diff2 >= 61) {
                     alert('最多只能查詢60天以內的資料');
                     return false;
                 }
@@ -98,7 +122,7 @@
                 d3.json('flowquery.php?ip=' + ip + '&startDate=' + startDate + '&endDate=' + endDate, function(error, data) {
                     document.getElementById('submit').disabled = false;
                     console.log(data);
-                    
+
                     //處理查詢失敗的情況
                     if (!data || (data.success === undefined) || !data.success) {
                         console.log('查詢失敗');
@@ -113,13 +137,11 @@
                     x.unshift('x');
                     //取出流量
                     var flow = data.result.map(function(d) {
-                        return d.flow / 1000 / 1000;
+                        return round4(d.flow / 1000 / 1000);
                     });
                     flow.unshift(ip);
                     //合併成圖表需要的資料
                     var col = [x, flow];
-                    //建立日期格式化的函數
-                    var format = d3.time.format("%Y-%m-%d");
                     //畫圖
                     chart = c3.generate({
                         bindto: '#chart',
