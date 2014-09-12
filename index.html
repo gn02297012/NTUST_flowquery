@@ -4,6 +4,10 @@
         <title>國立台灣科技大學 對外網路流量查詢</title>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta property="og:url" content="http://web.ntust.edu.tw/~B10009009/flowquery/" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="國立台灣科技大學 對外網路流量查詢" />
+        <meta property="og:image" content="http://web.ntust.edu.tw/~B10009009/flowquery/img/screenshot.png" />
         <link href="css/c3.css" rel="stylesheet" type="text/css">
         <script src="js/d3.v3.min.js"></script>
         <script src="js/c3.min.js"></script>
@@ -28,7 +32,7 @@
             <p>讓你知道每天使用流量的變化</p>
         </header>
         <div>
-            <form>
+            <form onsubmit="return query()">
                 <label>
                     IP
                     <input type="text" id="ip" value="140.118.31.56" required />
@@ -41,7 +45,7 @@
                     結束日期
                     <input type="date" id="endDate" value="" required />
                 </label>
-                <input type="button" id="submit" value="查詢" onclick="query()">
+                <input type="submit" id="submit" value="查詢">
             </form>
         </div>
         <div id="chart"></div>
@@ -182,6 +186,7 @@
                             });
                     //填表格結束
                 });
+                return false;
             }
 
 
