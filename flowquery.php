@@ -53,7 +53,7 @@ if (!function_exists('json_encode')) {
 function postToFlowquery($data = array()) {
     $ch = curl_init();
     $options = array(
-        CURLOPT_URL => "http://dotnet.cc.ntust.edu.tw/dormweb/flowquery.aspx",
+        CURLOPT_URL => "http://network.ntust.edu.tw/flowstatistical.aspx",
         CURLOPT_HEADER => 0,
         CURLOPT_VERBOSE => 0,
         CURLOPT_RETURNTRANSFER => true,
@@ -106,20 +106,47 @@ function flowQuery($ip, $date) {
         $value = getStringBetweenStrings($match, 'value="', '"');
         $data[$name] = $value;
     }
+    //拆解日期中的月、日
+    $date = explode('/', $date);
     //設定要查詢的IP跟日期
-    $data['ipdata'] = $ip;
-    $data['do_date'] = $date;
+    $data['ctl00$ContentPlaceHolder1$txtip'] = $ip;
+    $data['ctl00$ContentPlaceHolder1$dlmonth'] = $date[1];
+    $data['ctl00$ContentPlaceHolder1$dlday'] = $date[2];
+    $data['ctl00$ContentPlaceHolder1$dlhour'] = 23;
+    $data['ctl00$ContentPlaceHolder1$dlminute'] = 50;
+    $data['ctl00$ContentPlaceHolder1$dlcunit'] = 1;
     //print_r($result);
     //送出查詢
     $queryHtml = postToFlowquery($data);
-    //取出合計流量(Bytes)的欄位文字
-    $bytes = getStringBetweenStrings($queryHtml, 'ctl3:tid1" type="text" value="', '"');
-    //檢查是否成功取出文字，在日期或IP錯誤的情況下，該欄位可能不存在
-    if ($bytes === false) {
-        //發生錯誤就直接給0
-        $result = 0;
-    } else {
-        $result = (float) trim(str_replace(',', '', $bytes));
+    //拆解表格中的文字內容
+    $queryHtml = getStringBetweenStrings($queryHtml, '<table', '</table>');
+    preg_match_all('/<td>\s*([^<]*)\s*<\/td>/', $queryHtml, $matches);
+    $result = array();
+    if (isset($matches[1])) {
+        //流量欄位要果過濾的文字
+        $findList = array(' (bytes)', ',');
+        //迴圈到580是因為1小時有6筆紀錄，一天就有24*6=144筆，每筆有4欄資料，所以144*4=576
+        for ($i = 0; $i < 576; $i += 4) {
+            //取出欄位中的資料
+            $datetime = trim($matches[1][$i]);
+            $download = $matches[1][$i + 1];
+            $upload = $matches[1][$i + 2];
+            $total = $matches[1][$i + 3];
+            //轉換與淨化資料
+            $dt = explode(' ', $datetime);
+            $download = trim(str_replace($findList, '', $download)); //外對內流量
+            $upload = trim(str_replace($findList, '', $upload)); //內對外流量
+            $total = trim(str_replace($findList, '', $total)); //總流量
+            //產生結果
+            $result[] = array(
+                'datetime' => $datetime,
+                'date' => $dt[0],
+                'time' => $dt[1],
+                'download' => $download,
+                'upload' => $upload,
+                'total' => $total,                   
+            );
+        }
     }
     return $result;
 }
@@ -158,7 +185,8 @@ try {
     //查詢這一段時間內的流量
     for ($i = 0; $i < $count; $i++) {
         //將日期格式化
-        $date = date('Y/m/d', $startDate);
+        $date = date('Y/m/d', $startDate); //格式yyyy/mm/dd
+        $date = date('Y/n/j', $startDate); //格式yyyy/m/d
         //查詢
         $startTime = microtime(true);
         $flow = flowquery($params['ip'], $date);

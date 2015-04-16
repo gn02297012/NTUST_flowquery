@@ -54,7 +54,9 @@
                 <thead>
                     <tr>
                         <th>日期</th>
-                        <th>流量(Bytes)</th>
+                        <th>外對內流量(Bytes)</th>
+                        <th>內對外流量(Bytes)</th>
+                        <th>總流量(Bytes)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -117,15 +119,15 @@
                 var today = new Date();
                 var diff1 = (today - d1) / 86400 / 1000;
                 var diff2 = (today - d2) / 86400 / 1000;
-                if (diff1 >= 61 || diff2 >= 61) {
-                    alert('最多只能查詢60天以內的資料');
+                if ((diff1 >= 4) || (diff2 >= 4)) {
+                    alert('最多只能查詢3天前的資料');
                     return false;
                 }
                 //呼叫API
                 document.getElementById('submit').disabled = true;
                 d3.json('flowquery.php?ip=' + ip + '&startDate=' + startDate + '&endDate=' + endDate, function(error, data) {
                     document.getElementById('submit').disabled = false;
-                    console.log(data);
+                    //console.log(data);
 
                     //處理查詢失敗的情況
                     if (!data || (data.success === undefined) || !data.success) {
@@ -133,25 +135,62 @@
                         return false;
                     }
 
+                    //計算每日總計、每個時段的累積流量
+                    data.result.forEach(function(d, i, arr) {
+                        var downloadTotal = 0;
+                        var uploadTotal = 0;
+                        d.flow.forEach(function(f) {
+                            downloadTotal += f.download * 1;
+                            uploadTotal += f.upload * 1;
+                            f.cumulativeDownload = downloadTotal;
+                            f.cumulativeUpload = uploadTotal;
+                            f.cumulativeTotal = f.cumulativeDownload + f.cumulativeUpload;
+                        });
+                        arr[i]['download'] = downloadTotal;
+                        arr[i]['upload'] = uploadTotal;
+                        arr[i]['total'] = downloadTotal + uploadTotal;
+                    });
+                    //console.log(data.result);
+                    
                     //C3畫圖開始
                     //取出日期，產生X軸
                     var x = data.result.map(function(d) {
                         return new Date(d.date.replace(/\//g, '-'));
                     });
                     x.unshift('x');
+                    //定義下載、上傳、總流量的ID
+                    labels = {
+                      download: ip + '下載流量',
+                      upload: ip + '上傳流量',
+                      total: ip + '總流量'
+                    };
                     //取出流量
-                    var flow = data.result.map(function(d) {
-                        return round4(d.flow / 1000 / 1000);
+                    var download = data.result.map(function(d) {
+                        return round4(d.download / 1000 / 1000);
                     });
-                    flow.unshift(ip);
-                    //合併成圖表需要的資料
-                    var col = [x, flow];
+                    download.unshift(labels['download']);
+                    var upload = data.result.map(function(d) {
+                        return round4(d.upload / 1000 / 1000);
+                    });
+                    upload.unshift(labels['upload']);
+                    var total = data.result.map(function(d) {
+                        return round4(d.total / 1000 / 1000);
+                    });
+                    total.unshift(labels['total']);
+                    
+                    //定義圖形種類
+                    var types = {};
+                    types[labels['download']] = 'bar';
+                    types[labels['upload']] = 'bar';
+                    
                     //畫圖
                     chart = c3.generate({
                         bindto: '#chart',
                         data: {
                             x: 'x',
-                            columns: [x, flow]
+                            columns: [x, total, download, upload],
+                            type: 'line',
+                            types: types
                         },
                         axis: {
                             x: {
@@ -178,7 +217,7 @@
                             .append('tr');
                     tr.selectAll('td')
                             .data(function(d) {
-                                return [d.date, d.flow];
+                                return [d.date, d.download, d.upload, d.total];
                             }).enter()
                             .append('td')
                             .text(function(d) {
