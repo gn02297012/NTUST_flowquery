@@ -43,28 +43,31 @@ if (!function_exists('json_encode')) {
         }
     }
 
-}
+    //來源: https://stackoverflow.com/questions/2370968/how-can-i-decode-json-in-php-5-1/2371009#2371009
+    if (!function_exists('json_decode')) { 
+        function json_decode($json) 
+        {  
+            // Author: walidator.info 2009 
+            $comment = false; 
+            $out = '$x='; 
+        
+            for ($i=0; $i<strlen($json); $i++) 
+            { 
+                if (!$comment) 
+                { 
+                    if ($json[$i] == '{' || $json[$i] == '[')        $out .= ' array('; 
+                    else if ($json[$i] == '}' || $json[$i] == ']')    $out .= ')'; 
+                    else if ($json[$i] == ':')    $out .= '=>'; 
+                    else                         $out .= $json[$i];            
+                } 
+                else $out .= $json[$i]; 
+                if ($json[$i] == '"')    $comment = !$comment; 
+            } 
+            eval($out . ';'); 
+            return $x; 
+        }  
+    } 
 
-/**
- * 送出一個POST要求到對外網路流量查詢
- * @param array $data 要POST的資料
- * @return string HTML
- */
-function postToFlowquery($data = array()) {
-    $ch = curl_init();
-    $options = array(
-        CURLOPT_URL => "http://network.ntust.edu.tw/flowstatistical.aspx",
-        CURLOPT_HEADER => 0,
-        CURLOPT_VERBOSE => 0,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_USERAGENT => "Mozilla/4.0 (compatible;)",
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => http_build_query($data),
-    );
-    curl_setopt_array($ch, $options);
-    $result = curl_exec($ch);
-    curl_close($ch);
-    return $result;
 }
 
 /**
@@ -91,63 +94,67 @@ function getStringBetweenStrings($str, $str1, $str2) {
  * 查詢指定IP與日期的流量
  * @param string $ip 要查詢的IP
  * @param string $date 要查詢的日期
- * @return int 流量，如果發生錯誤將傳回false
+ * @return array 流量，如果發生錯誤將傳回false
  */
 function flowQuery($ip, $date) {
-    //先取得流量查詢的網頁
-    $html = postToFlowquery();
-    //找出所有的INPUT
-    preg_match_all('/(<input.*>)/', $html, $matches);
-    //print_r($matches);
-    //組合中要POST的資料
-    $data = array();
-    foreach ($matches[0] as $match) {
-        $name = getStringBetweenStrings($match, 'name="', '"');
-        $value = getStringBetweenStrings($match, 'value="', '"');
-        $data[$name] = $value;
-    }
-    //拆解日期中的月、日
-    $date = explode('/', $date);
-    //設定要查詢的IP跟日期
-    $data['ctl00$ContentPlaceHolder1$txtip'] = $ip;
-    $data['ctl00$ContentPlaceHolder1$dlmonth'] = $date[1];
-    $data['ctl00$ContentPlaceHolder1$dlday'] = $date[2];
-    $data['ctl00$ContentPlaceHolder1$dlhour'] = 23;
-    $data['ctl00$ContentPlaceHolder1$dlminute'] = 50;
-    $data['ctl00$ContentPlaceHolder1$dlcunit'] = 1;
-    //print_r($result);
-    //送出查詢
-    $queryHtml = postToFlowquery($data);
-    //拆解表格中的文字內容
-    $queryHtml = getStringBetweenStrings($queryHtml, '<table', '</table>');
-    preg_match_all('/<td>\s*([^<]*)\s*<\/td>/', $queryHtml, $matches);
+    //調整日期字串的格式
+    $time = strtotime($date);
+    $time -= 86400;
+    $date = date('Y-m-d', $time) . 'T16:00:00.000Z';
+
+    //產生要POST的資料
+    $data = array(
+        'ip' => $ip,
+        'dt' => $date,
+        'units' => 0
+    );
+    
+    //送出POST要求
+    $ch = curl_init();
+    $options = array(
+        CURLOPT_URL => "https://network.ntust.edu.tw/flowStatistics/getFlowData",
+        CURLOPT_HEADER => 0,
+        CURLOPT_VERBOSE => 0,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_USERAGENT => "Mozilla/4.0 (compatible;)",
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($data),
+    );
+    curl_setopt_array($ch, $options);
+    $content = curl_exec($ch);
+    curl_close($ch);
+
+    //處理回傳結果
+    $json = json_decode($content, true);
+
+    //流量欄位要果過濾的文字
+    $findList = array(' (bytes)', ',');
+
+    //迴圈到146是因為1小時有6筆紀錄，一天就有24*6=144筆，再加上頭尾有2筆總計
     $result = array();
-    if (isset($matches[1])) {
-        //流量欄位要果過濾的文字
-        $findList = array(' (bytes)', ',');
-        //迴圈到580是因為1小時有6筆紀錄，一天就有24*6=144筆，每筆有4欄資料，所以144*4=576
-        for ($i = 0; $i < 576; $i += 4) {
-            //取出欄位中的資料
-            $datetime = trim($matches[1][$i]);
-            $download = $matches[1][$i + 1];
-            $upload = $matches[1][$i + 2];
-            $total = $matches[1][$i + 3];
-            //轉換與淨化資料
-            $dt = explode(' ', $datetime);
-            $download = trim(str_replace($findList, '', $download)); //外對內流量
-            $upload = trim(str_replace($findList, '', $upload)); //內對外流量
-            $total = trim(str_replace($findList, '', $total)); //總流量
-            //產生結果
-            $result[] = array(
-                'datetime' => $datetime,
-                'date' => $dt[0],
-                'time' => $dt[1],
-                'download' => $download,
-                'upload' => $upload,
-                'total' => $total,                   
-            );
-        }
+    for ($i = 1; $i < 145; $i += 1) {
+        //取出欄位中的資料
+        $row = $json['items'][$i];
+        $datetime = $row['Timeid'];
+        $download = $row['finfromout'];
+        $upload = $row['fout2out'];
+        $total = $row['totflow'];
+        //轉換與淨化資料
+        $dt = explode(' ', $datetime);
+        $download = trim(str_replace($findList, '', $download)); //外對內流量
+        $upload = trim(str_replace($findList, '', $upload)); //內對外流量
+        $total = trim(str_replace($findList, '', $total)); //總流量
+        //產生結果
+        $result[] = array(
+            'datetime' => $datetime,
+            'date' => $dt[0],
+            'time' => $dt[1],
+            'download' => $download,
+            'upload' => $upload,
+            'total' => $total,                   
+        );
     }
+
     return $result;
 }
 
